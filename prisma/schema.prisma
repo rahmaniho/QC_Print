@@ -1,0 +1,355 @@
+generator client {
+  provider   = "prisma-client"
+  output     = "../src/generated/prisma"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  INSPECTOR
+  VIEWER
+}
+
+enum MaterialType {
+  PAPER
+  FILM
+  INK
+  COATING
+  ADHESIVE
+}
+
+enum PrintType {
+  OFFSET
+  FLEXO
+  GRAVURE
+  DIGITAL
+  SCREEN
+  HYBRID
+}
+
+enum JobStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum InspectionStage {
+  PRE_PRESS
+  ON_PRESS
+  POST_PRESS
+}
+
+enum InspectionStatus {
+  PASS
+  CONDITIONAL
+  FAIL
+}
+
+enum ColorChannel {
+  C
+  M
+  Y
+  K
+}
+
+enum AdhesionMethod {
+  ASTM_D3359
+}
+
+enum DefectSeverity {
+  CRITICAL
+  MAJOR
+  MINOR
+}
+
+enum CapaMethod {
+  FIVE_WHY
+  ISHIKAWA
+}
+
+enum CapaStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum LegalCompliance {
+  VERIFIED
+  NON_COMPLIANT
+  NOT_APPLICABLE
+  PENDING
+}
+
+model User {
+  id              String         @id @default(cuid())
+  name            String
+  email           String         @unique
+  passwordHash    String
+  role            Role           @default(INSPECTOR)
+  isActive        Boolean        @default(true)
+  authVersion     Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  jobs            Job[]          @relation("JobCreator")
+  inspections     Inspection[]   @relation("InspectionInspector")
+  assignedCapas   Capa[]         @relation("CapaResponsible")
+  auditLogs       AuditLog[]
+  resetTokens     PasswordReset[]
+
+  @@index([role, isActive])
+  @@index([createdAt])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  contact   String?
+  email     String?
+  phone     String?
+  address   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  jobs      Job[]
+
+  @@index([name])
+  @@index([email])
+}
+
+model Material {
+  id        String       @id @default(cuid())
+  name      String
+  type      MaterialType
+  supplier  String?
+  spec      String?
+  notes     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([type, name])
+  @@index([supplier])
+}
+
+model Job {
+  id               String      @id @default(cuid())
+  jobNumber        String      @unique
+  customerId       String
+  printType        PrintType
+  productName      String
+  dimensions       String
+  colorsCount      Int
+  substrate        String
+  ink              String?
+  targetStandard   String?
+  quantity         Int
+  dueDate          DateTime?
+  status           JobStatus   @default(DRAFT)
+  referenceFileUrl String?
+  notes            String?
+  createdById      String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  customer         Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy        User        @relation("JobCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  inspections      Inspection[]
+
+  @@index([customerId, createdAt])
+  @@index([printType, status])
+  @@index([dueDate, status])
+  @@index([createdById])
+}
+
+model Inspection {
+  id                   String             @id @default(cuid())
+  jobId                String
+  inspectorId          String
+  inspectionDate       DateTime           @default(now())
+  stage                InspectionStage
+  sampleSize           Int
+  aqlLevel             String?
+  environmentalTemp    Float?
+  environmentalHumidity Float?
+  legalCompliance      LegalCompliance    @default(PENDING)
+  status               InspectionStatus   @default(CONDITIONAL)
+  score                Float              @default(0)
+  notes                String?
+  createdAt            DateTime           @default(now())
+  job                  Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  inspector            User               @relation("InspectionInspector", fields: [inspectorId], references: [id], onDelete: Restrict)
+  colorMeasurements    ColorMeasurement[]
+  densityMeasurements DensityMeasurement[]
+  registerMeasurement RegisterMeasurement?
+  adhesionTest         AdhesionTest?
+  barcodeTest          BarcodeTest?
+  defects              Defect[]
+  capas                Capa[]
+
+  @@index([jobId, inspectionDate])
+  @@index([inspectorId, inspectionDate])
+  @@index([status, inspectionDate])
+  @@index([inspectionDate])
+}
+
+model ColorMeasurement {
+  id           String     @id @default(cuid())
+  inspectionId String
+  patchName    String
+  patchType    String     @default("SOLID")
+  targetL      Float
+  targetA      Float
+  targetB      Float
+  measuredL    Float
+  measuredA    Float
+  measuredB    Float
+  deltaE00     Float
+  deltaE76     Float
+  tolerance    Float
+  isPass       Boolean
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([inspectionId, patchName])
+  @@index([isPass])
+}
+
+model DensityMeasurement {
+  id              String       @id @default(cuid())
+  inspectionId    String
+  colorChannel    ColorChannel
+  targetDensity   Float
+  measuredDensity Float
+  tvi             Float?
+  isPass          Boolean
+  inspection      Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([inspectionId, colorChannel])
+  @@index([isPass])
+}
+
+model RegisterMeasurement {
+  id              String     @id @default(cuid())
+  inspectionId    String     @unique
+  targetOffset    Float      @default(0)
+  measuredOffset  Float
+  tolerance       Float
+  isPass          Boolean
+  inspection      Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([isPass])
+}
+
+model AdhesionTest {
+  id           String         @id @default(cuid())
+  inspectionId String         @unique
+  method       AdhesionMethod @default(ASTM_D3359)
+  rating       String
+  isPass       Boolean
+  inspection   Inspection    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([isPass])
+}
+
+model BarcodeTest {
+  id           String     @id @default(cuid())
+  inspectionId String     @unique
+  symbology    String
+  grade        String
+  isPass       Boolean
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([grade, isPass])
+}
+
+model Defect {
+  id           String         @id @default(cuid())
+  inspectionId String
+  type         DefectSeverity
+  category     String
+  description  String
+  location     String?
+  imageUrl     String?
+  createdAt    DateTime       @default(now())
+  inspection   Inspection    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  capa         Capa?
+
+  @@index([inspectionId, type])
+  @@index([type, createdAt])
+  @@index([category])
+}
+
+model Capa {
+  id                 String     @id @default(cuid())
+  inspectionId       String
+  defectId           String?    @unique
+  rootCause          String
+  method             CapaMethod
+  correctiveAction   String
+  preventiveAction   String
+  responsibleUserId  String?
+  dueDate            DateTime?
+  status             CapaStatus @default(OPEN)
+  closedAt           DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  inspection         Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  defect             Defect?    @relation(fields: [defectId], references: [id], onDelete: SetNull)
+  responsibleUser    User?      @relation("CapaResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, dueDate])
+  @@index([inspectionId])
+  @@index([responsibleUserId])
+}
+
+model Standard {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String
+  parameters  Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([entity, entityId, createdAt])
+  @@index([action, createdAt])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
